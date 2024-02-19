@@ -3,28 +3,38 @@ import cv2 as cv
 
 
 
-def draw_lines(img, lines):
+def draw_lines(img, lines, color=[0, 255, 0], thickness=2):
     if lines is None:
         return img
 
     # Calculer la pente et l'ordonnée à l'origine de chaque ligne
-    slopes = [(y2-y1)/(x2-x1) if x2-x1 != 0 else 0 for line in lines for x1,y1,x2,y2 in line]
-    intercepts = [y1 - slope*x1 for line, slope in zip(lines, slopes) for x1,y1,x2,y2 in line]
+    lines_data = [(x1, y1, x2, y2, (y2-y1)/(x2-x1), y1 - (y2-y1)/(x2-x1)*x1) for line in lines for x1,y1,x2,y2 in line]
+    
+    # Seuil pour regrouper les lignes
+    slope_threshold = 0.1
+    intercept_threshold = 10.0
 
-    # Calculer les nouveaux points finaux pour prolonger les lignes
-    y1_new = img.shape[0]  # le bas de l'image
-    y2_new = int(y1_new * 0.6)  # un peu en dessous du milieu de l'image
+    # Regrouper les lignes
+    grouped_lines_data = []
+    for line_data in lines_data:
+        x1, y1, x2, y2, slope, intercept = line_data
+        for group in grouped_lines_data:
+            if abs(group[0] - slope) < slope_threshold and abs(group[1] - intercept) < intercept_threshold:
+                group[2].append(line_data)
+                group[0] = np.mean([line[4] for line in group[2]])  # Update average slope
+                group[1] = np.mean([line[5] for line in group[2]])  # Update average intercept
+                break
+        else:
+            grouped_lines_data.append([slope, intercept, [line_data]])
 
-    new_lines = []
-    for slope, intercept in zip(slopes, intercepts):
+    # Dessiner les lignes moyennes
+    for group in grouped_lines_data:
+        slope, intercept, _ = group
+        y1_new = img.shape[0]  # le bas de l'image
+        y2_new = int(y1_new * 0.6)  # un peu en dessous du milieu de l'image
         x1_new = int((y1_new - intercept) / slope) if slope != 0 else 0
         x2_new = int((y2_new - intercept) / slope) if slope != 0 else 0
-        new_lines.append([[x1_new, y1_new, x2_new, y2_new]])
-
-    # Dessiner les nouvelles lignes
-    for line in new_lines:
-        x1, y1, x2, y2 = line[0]
-        cv.line(img, (x1, y1), (x2, y2), (0, 255, 0), 5)
+        cv.line(img, (x1_new, y1_new), (x2_new, y2_new), color, thickness)
 
     return img
 
@@ -35,7 +45,7 @@ def region_of_interest(img):
     mask = np.zeros_like(img)
 
     # Définir les coordonnées du rectangle de recadrage (x, y, largeur, hauteur)
-    x, y, w, h = 350, 450, 640, 640  # Ajustez ces valeurs en fonction de vos besoins
+    x, y, w, h = 350, 450, 600, 600  # Ajustez ces valeurs en fonction de vos besoins
 
     rectangle = np.array([[
         (x, y),
@@ -100,7 +110,7 @@ while cap.isOpened():
         cropped_edges = region_of_interest(edges)
         
         #transformation de Hough
-        lines = cv.HoughLinesP(cropped_edges, 1, np.pi/180, 100, minLineLength=50, maxLineGap = 10)
+        lines = cv.HoughLinesP(cropped_edges, 1, np.pi/180, 90, minLineLength=10, maxLineGap = 5)
         
         frame = draw_lines(frame, lines)
        
